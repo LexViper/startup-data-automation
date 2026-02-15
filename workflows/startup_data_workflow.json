@@ -1,0 +1,322 @@
+{
+  "name": "Startup Data Collection Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-1k2l3m4n5o6p",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "abc123def456"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.crunchbase.com/v4/entities/organizations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "field_ids",
+              "value": "name,short_description,categories,founded_on,num_employees_enum"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-2l3m4n5o6p7q",
+      "name": "Fetch Startup Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform and clean the startup data\nconst items = $input.all();\nconst transformedData = [];\n\nfor (const item of items) {\n  const startup = item.json;\n  \n  transformedData.push({\n    name: startup.properties?.name || 'N/A',\n    description: startup.properties?.short_description || 'N/A',\n    industry: startup.properties?.categories?.join(', ') || 'N/A',\n    founded: startup.properties?.founded_on || 'N/A',\n    employees: startup.properties?.num_employees_enum || 'N/A',\n    collected_at: new Date().toISOString(),\n    source: 'Crunchbase API'\n  });\n}\n\nreturn transformedData.map(data => ({ json: data }));"
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-3m4n5o6p7q8r",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.industry }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $json.name }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-4n5o6p7q8r9s",
+      "name": "Filter Valid Startups",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "startups",
+        "columns": "name, description, industry, founded, employees, collected_at, source",
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-5o6p7q8r9s0t",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1120,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1234567890abcdefghijklmnop",
+          "mode": "list",
+          "cachedResultName": "Startup Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.name }}",
+            "description": "={{ $json.description }}",
+            "industry": "={{ $json.industry }}",
+            "founded": "={{ $json.founded }}",
+            "employees": "={{ $json.employees }}",
+            "collected_at": "={{ $json.collected_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-6p7q8r9s0t1u",
+      "name": "Export to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1120,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "automation@yourcompany.com",
+        "toEmail": "team@yourcompany.com",
+        "subject": "✅ Daily Startup Data Collection Complete",
+        "text": "=Hi Team,\n\nThe daily startup data collection has completed successfully!\n\n📊 Summary:\n- Total startups processed: {{ $('Filter Valid Startups').all().length }}\n- Data saved to database ✓\n- Google Sheets updated ✓\n- Collection timestamp: {{ $now.format('yyyy-MM-dd HH:mm:ss') }}\n\nView the data in your Google Sheet or database.\n\nBest regards,\nAutomation System",
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-7q8r9s0t1u2v",
+      "name": "Send Success Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "3",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🚀 Startup Data Collection Workflow\n\nThis workflow automatically collects startup data from Crunchbase API every day at 9 AM.\n\n### Features:\n- Daily automated collection\n- Data transformation & cleaning\n- Quality filtering\n- Dual storage (Database + Sheets)\n- Email notifications\n\n### Data Points:\n✓ Company name\n✓ Description\n✓ Industry categories\n✓ Founded date\n✓ Employee count",
+        "height": 340,
+        "width": 380
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-8r9s0t1u2v3w",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "content": "🔄 **Data Processing**\nClean, transform, and validate",
+        "height": 160,
+        "width": 240
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-9s0t1u2v3w4x",
+      "name": "Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "💾 **Storage Layer**\nSave to multiple destinations",
+        "height": 160,
+        "width": 240
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-0t1u2v3w4x5y",
+      "name": "Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Startup Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Startup Data": {
+      "main": [
+        [
+          {
+            "node": "Transform Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Startups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Startups": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Export to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Send Success Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Export to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Success Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-02-14T10:30:00.000Z",
+      "updatedAt": "2024-02-14T10:30:00.000Z",
+      "id": "1",
+      "name": "Startup Data"
+    },
+    {
+      "createdAt": "2024-02-14T10:30:00.000Z",
+      "updatedAt": "2024-02-14T10:30:00.000Z",
+      "id": "2",
+      "name": "Automation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-02-14T10:30:00.000Z",
+  "versionId": "1"
+}
