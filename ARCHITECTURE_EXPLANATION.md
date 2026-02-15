@@ -1,170 +1,134 @@
-# System Architecture Documentation
+# System Architecture
 
-## Startup Data Collection & Automation System
-
----
-
-## 📋 Table of Contents
-
-1. [Architecture Overview](#architecture-overview)
-2. [System Components](#system-components)
-3. [Data Flow](#data-flow)
-4. [Technology Stack](#technology-stack)
-5. [Implementation Phases](#implementation-phases)
-6. [Scalability Considerations](#scalability-considerations)
-7. [Security & Privacy](#security--privacy)
+**Startup Data Collection & Automation System**
 
 ---
 
-## Architecture Overview
+## Overview
 
-The Startup Data Collection System is designed as a **modular, scalable automation platform** for discovering, collecting, and managing startup data for business development and outreach purposes.
+A modular, scalable data collection and processing system designed for automated startup intelligence gathering. The architecture follows a layered approach with clear separation between data acquisition, processing, storage, and monitoring.
 
-### Design Principles
-
-1. **Modularity** - Each component can be developed and deployed independently
-2. **Scalability** - Architecture supports growth from 40 to 10,000+ records
-3. **Automation** - Minimize manual intervention through workflow orchestration
-4. **Data Quality** - Built-in validation and filtering mechanisms
-5. **Flexibility** - Easy to add new data sources and integrations
+**Design Goals:**
+- Modular components that can scale independently
+- Support for both manual and automated data collection
+- Quality-first approach with validation at each stage
+- Extensible to multiple data sources and outputs
 
 ---
 
-## System Components
+## Architecture Diagram
 
-### 1. DATA ACQUISITION LAYER
+![System Architecture](../architecture/architecture_diagram.png)
 
-The data acquisition layer is responsible for collecting startup information from multiple sources.
+---
 
-#### Current Implementation (Phase 1)
+## System Layers
+
+### 1. Data Acquisition Layer
+
+**Purpose:** Collect startup data from multiple sources
+
+#### Current Implementation
 **Manual Research**
-- **Source**: Crunchbase Web Portal
-  - Purpose: Comprehensive startup database
-  - Data: Company info, funding, founders
-  - Access: Manual web browsing and extraction
+- Crunchbase Web Portal
+- Y Combinator Directory  
+- Product Hunt Listings
 
-- **Source**: Y Combinator Directory
-  - Purpose: YC-backed startup listings
-  - Data: Batch info, company details, founders
-  - Access: Public directory browsing
+**Output:** 40 validated Indian startup records in standardized format
 
-- **Source**: Product Hunt
-  - Purpose: New product launches
-  - Data: Product descriptions, categories, upvotes
-  - Access: Manual platform research
-
-**Data Collected**: 40 Indian startup records with 11 standardized fields
-
-#### Designed for Future (Phase 2)
+#### Designed Capability
 **API Integration**
-- **Crunchbase API**
-  - Endpoint: `https://api.crunchbase.com/v4/entities/organizations`
-  - Authentication: API key (HTTP Header)
-  - Rate Limit: Based on subscription tier
-  - Data Format: JSON
 
-- **PredictLeads API**
-  - Endpoint: `https://predictleads.com/api/companies`
-  - Authentication: API token
-  - Rate Limit: 1000 requests/month (free tier)
-  - Data Format: JSON
+| API | Endpoint | Authentication | Rate Limit |
+|-----|----------|----------------|------------|
+| Crunchbase | `/v4/entities/organizations` | API Key (Header) | Tier-based |
+| PredictLeads | `/api/companies` | Bearer Token | 1000/month |
+| OpenCorporates | `/companies` | API Key | 500/month |
 
-- **OpenCorporates API**
-  - Endpoint: `https://api.opencorporates.com/companies`
-  - Authentication: API key
-  - Rate Limit: 500 requests/month (free tier)
-  - Data Format: JSON
+**Data Format:** JSON responses mapped to standardized schema
 
 ---
 
-### 2. DATA PROCESSING LAYER (n8n Workflow)
+### 2. Data Processing Layer
 
-The processing layer handles data transformation, cleaning, validation, and routing using n8n workflow automation.
+**Technology:** n8n workflow automation
 
-#### Workflow Components
+#### Processing Pipeline
 
-**A. Data Ingestion**
-- **Node Type**: HTTP Request / CSV Reader
-- **Purpose**: Fetch data from APIs or load from CSV
-- **Configuration**:
-  - Method: GET for APIs
-  - Headers: Authentication tokens
-  - Query Parameters: Field selection, pagination
-- **Output**: Raw JSON/CSV data
-
-**B. Data Transformation**
-- **Node Type**: Code (JavaScript)
-- **Purpose**: Clean, format, and structure data
-- **Operations**:
-  - Extract relevant fields from API responses
-  - Normalize field names and formats
-  - Convert data types (dates, numbers)
-  - Add metadata (source, timestamp)
-  - Handle missing values with defaults
-- **Example Logic**:
-```javascript
-const transformedData = [];
-for (const item of items) {
-    const startup = item.json;
-    transformedData.push({
-        company_name: startup.properties?.name || 'N/A',
-        website: startup.properties?.website || '',
-        founder_name: startup.properties?.founder || 'N/A',
-        // ... additional fields
-        collected_at: new Date().toISOString(),
-        source: 'Crunchbase API'
-    });
-}
-return transformedData.map(data => ({ json: data }));
+```
+┌─────────────────┐
+│ Data Ingestion  │  → Fetch from API or load CSV
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Transformation  │  → Clean, normalize, enrich
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Quality Filter  │  → Validate required fields
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Validation      │  → Check formats, remove duplicates
+└─────────────────┘
 ```
 
-**C. Data Filtering**
-- **Node Type**: Filter
-- **Purpose**: Apply quality control and criteria matching
-- **Conditions**:
-  - Non-empty required fields (name, industry)
-  - Valid email format
-  - Indian location (if filtering by geography)
-  - Specific industries (FinTech, EdTech, etc.)
-  - Funding stage criteria
-- **Output**: Only validated records proceed
+#### Transformation Logic
 
-**D. Data Validation**
-- **Implicit**: Through filter conditions
-- **Checks**:
-  - Required field presence
-  - Data type validation
-  - Format validation (URLs, emails)
-  - Duplicate detection (by company name + website)
+**Operations:**
+- Extract relevant fields from API responses
+- Normalize data types (dates, enums, text)
+- Add metadata (source, timestamp)
+- Handle null/missing values with defaults
+
+**Implementation:**
+```javascript
+// JavaScript code node in n8n
+const transformedData = items.map(item => ({
+    company_name: item.properties?.name || 'N/A',
+    website: item.properties?.website || '',
+    industry: item.properties?.categories?.join(', ') || 'N/A',
+    collected_at: new Date().toISOString(),
+    source: 'Crunchbase API'
+}));
+```
+
+#### Quality Filtering
+
+**Validation Rules:**
+- Required fields: company_name, industry
+- Format checks: email format, URL format
+- Duplicate detection: (company_name + website) uniqueness
+- Data completeness: minimum 60% field population
 
 ---
 
-### 3. DATA STORAGE LAYER
+### 3. Data Storage Layer
 
-The storage layer provides persistent storage and easy access to collected data.
+#### Current Implementation
 
-#### Current Implementation (Phase 1)
-**CSV Format**
-- **File**: `startup_data_assignment_ready.csv`
-- **Location**: `/data` directory
-- **Records**: 40 Indian startups
-- **Encoding**: UTF-8
-- **Advantages**:
-  - Human-readable
-  - Excel/Sheets compatible
-  - Easy to share and version control
-  - No infrastructure required
-- **Limitations**:
-  - No concurrent access control
-  - Limited query capabilities
-  - Manual updates required
+**CSV Storage**
+- Format: UTF-8 encoded CSV
+- Records: 40 Indian startups
+- Fields: 11 standardized columns
+- Location: `/data/startup_data_assignment_ready.csv`
 
-#### Designed for Future (Phase 2)
-**Scalable Storage**
+**Advantages:**
+- Simple, portable format
+- No infrastructure required
+- Version control friendly
+- Human-readable
 
-**PostgreSQL Database** (Primary Storage)
-- **Purpose**: Structured, scalable data storage
-- **Schema**:
+**Limitations:**
+- No concurrent write support
+- Limited query capabilities
+- Manual synchronization required
+
+#### Designed Capability
+
+**PostgreSQL Database**
+
+Schema design:
 ```sql
 CREATE TABLE startups (
     id SERIAL PRIMARY KEY,
@@ -180,315 +144,174 @@ CREATE TABLE startups (
     startup_stage VARCHAR(50),
     source VARCHAR(100),
     collected_at TIMESTAMP DEFAULT NOW(),
-    last_updated TIMESTAMP DEFAULT NOW(),
     UNIQUE(company_name, website)
 );
-```
-- **Indexes**:
-  - `idx_industry` on industry column
-  - `idx_location` on location column
-  - `idx_stage` on startup_stage column
-- **Advantages**:
-  - ACID compliance
-  - Complex querying with SQL
-  - Concurrent access support
-  - Data integrity constraints
-  - Scalable to millions of records
 
-**Google Sheets Integration** (Team Access)
-- **Purpose**: Real-time collaboration and viewing
-- **Node Type**: Google Sheets (n8n)
-- **Operation**: Append rows
-- **Configuration**:
-  - Document ID: Linked spreadsheet
-  - Sheet Name: "Startups"
-  - Column Mapping: Automated field mapping
-- **Advantages**:
-  - No technical skills required for viewing
-  - Real-time updates
-  - Easy filtering and sorting
-  - Share with non-technical team members
-  - Export to various formats
+CREATE INDEX idx_industry ON startups(industry);
+CREATE INDEX idx_location ON startups(location);
+CREATE INDEX idx_stage ON startups(startup_stage);
+```
+
+**Google Sheets Integration**
+- Real-time collaboration
+- No-code data access for non-technical users
+- Auto-sync on workflow execution
+- Export-friendly format
 
 ---
 
-### 4. MONITORING & ALERTS LAYER
-
-The monitoring layer provides visibility into system operations and alerts stakeholders.
-
-#### Designed Components
+### 4. Monitoring & Alerts Layer
 
 **Email Notifications**
-- **Node Type**: Email Send (SMTP)
-- **Trigger**: Workflow completion or failure
-- **Configuration**:
-  - SMTP Server: Gmail, SendGrid, or custom
-  - Recipients: Team distribution list
-  - Subject: Status indicator (✅ Success / ❌ Failure)
-- **Content**:
-  - Summary statistics (records processed)
-  - Execution timestamp
-  - Links to data (Google Sheets, dashboard)
-  - Error details (if failure)
+- Trigger: Workflow completion or failure
+- Content: Summary statistics, timestamps, error details
+- Recipients: Team distribution list
+- Protocol: SMTP
 
-**Example Notification**:
+**Notification Template:**
 ```
-Subject: ✅ Daily Startup Data Collection Complete
+Subject: ✅ Startup Data Collection Complete
 
-Hi Team,
-
-The daily startup data collection has completed successfully!
-
-📊 Summary:
-- Total startups processed: 47
-- New startups added: 5
+Summary:
+- Records processed: 47
+- New records: 5
 - Duplicates filtered: 2
-- Data saved to database ✓
-- Google Sheets updated ✓
-- Collection timestamp: 2026-02-15 09:00:00
+- Execution time: 45s
+- Timestamp: 2026-02-15 09:00:00
 
-View the data: [Link to Google Sheet]
-
-Best regards,
-Automation System
+[Link to Google Sheet]
 ```
 
 ---
 
 ## Data Flow
 
-### End-to-End Data Journey
+### End-to-End Process
 
 ```
-1. DATA SOURCES
-   ├─ Crunchbase API
-   ├─ Y Combinator Directory
-   └─ Product Hunt
-          ↓
-2. INGESTION (n8n HTTP Request Node)
-   ├─ Fetch data via REST APIs
-   ├─ Handle pagination
-   └─ Manage rate limits
-          ↓
-3. TRANSFORMATION (n8n Code Node)
-   ├─ Extract relevant fields
-   ├─ Normalize formats
-   ├─ Add metadata
-   └─ Handle missing data
-          ↓
-4. FILTERING (n8n Filter Node)
-   ├─ Validate required fields
-   ├─ Check data quality
-   ├─ Apply business criteria
-   └─ Remove duplicates
-          ↓
-5. STORAGE
-   ├─ PostgreSQL (structured storage)
-   │   ├─ Insert new records
-   │   ├─ Update existing records
-   │   └─ Maintain data integrity
-   │
-   └─ Google Sheets (team access)
-       ├─ Append new rows
-       └─ Real-time collaboration
-          ↓
-6. NOTIFICATION (n8n Email Node)
-   ├─ Send success confirmation
-   ├─ Include summary stats
-   └─ Provide data access links
+┌──────────────┐
+│ Data Sources │  Crunchbase, YC, Product Hunt
+└──────┬───────┘
+       │
+       ↓ HTTP GET / Manual Research
+┌──────────────┐
+│ n8n Workflow │
+│              │
+│ ┌──────────┐ │
+│ │ Ingest   │ │  Fetch/Load data
+│ └────┬─────┘ │
+│      ↓       │
+│ ┌──────────┐ │
+│ │Transform │ │  Clean & normalize
+│ └────┬─────┘ │
+│      ↓       │
+│ ┌──────────┐ │
+│ │ Filter   │ │  Validate quality
+│ └────┬─────┘ │
+│      ↓       │
+│ ┌──────────┐ │
+│ │ Validate │ │  Check duplicates
+│ └────┬─────┘ │
+└──────┼───────┘
+       │
+       ├──────────────┬──────────────┐
+       ↓              ↓              ↓
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│   CSV    │   │PostgreSQL│   │  Sheets  │
+│ (Current)│   │(Designed)│   │(Designed)│
+└──────────┘   └──────────┘   └────┬─────┘
+                                    │
+                                    ↓
+                              ┌──────────┐
+                              │  Email   │
+                              │  Alert   │
+                              └──────────┘
 ```
-
-### Data Flow Diagram
-
-*[Your architecture diagram image would go here]*
 
 ---
 
 ## Technology Stack
 
-### Core Technologies
+### Core Components
 
-| Component | Technology | Purpose | Version |
-|-----------|-----------|---------|---------|
-| Workflow Engine | n8n | Automation & orchestration | 0.200.0+ |
-| Data Format | CSV | Current data storage | UTF-8 |
-| Database | PostgreSQL | Scalable storage (designed) | 14.x |
-| Cloud Storage | Google Sheets | Team collaboration (designed) | API v4 |
-| Programming | JavaScript | Data transformation logic | ES6+ |
-| Runtime | Node.js | n8n execution environment | 14.x+ |
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| Orchestration | n8n | 0.200.0+ | Workflow automation |
+| Storage (Current) | CSV | UTF-8 | Data persistence |
+| Storage (Designed) | PostgreSQL | 14.x | Relational database |
+| Collaboration | Google Sheets | API v4 | Team access |
+| Processing | JavaScript | ES6+ | Data transformation |
+| Runtime | Node.js | 14.x+ | Execution environment |
 
-### APIs & Services
+### External APIs
 
-| Service | Purpose | Integration Status |
-|---------|---------|-------------------|
-| Crunchbase API | Startup data collection | Designed |
-| PredictLeads API | Technology & funding data | Designed |
-| OpenCorporates API | Company registration data | Designed |
-| Google Sheets API | Data export & collaboration | Designed |
-| SMTP Service | Email notifications | Designed |
-
-### Development Tools
-
-- **Version Control**: Git
-- **Code Editor**: VS Code (recommended)
-- **Database Client**: pgAdmin / DBeaver
-- **API Testing**: Postman / Insomnia
-- **Container Platform**: Docker (optional)
+| Service | Purpose | Status |
+|---------|---------|--------|
+| Crunchbase API | Company data | Designed |
+| PredictLeads API | Tech intelligence | Designed |
+| OpenCorporates API | Registration data | Designed |
+| Google Sheets API | Data export | Designed |
+| SMTP | Notifications | Designed |
 
 ---
 
-## Implementation Phases
-
-### Phase 1: Manual Data Collection ✅ COMPLETE
-
-**Timeline**: Week 1
-**Status**: ✅ Delivered
-
-**Activities**:
-- ✅ Identified data sources (Crunchbase, YC, Product Hunt)
-- ✅ Defined data schema (11 columns)
-- ✅ Manually researched and collected 40 Indian startups
-- ✅ Structured data in CSV format
-- ✅ Validated data quality
-
-**Deliverables**:
-- `startup_data_assignment_ready.csv` with 40 records
-- Data covering multiple industries (FinTech, EdTech, E-commerce, etc.)
-- Geographic focus on major Indian startup hubs
-
-**Outcome**: Demonstrated understanding of data requirements and manual research methodology.
-
----
-
-### Phase 2: Workflow Design ✅ COMPLETE
-
-**Timeline**: Week 1-2
-**Status**: ✅ Delivered
-
-**Activities**:
-- ✅ Designed n8n workflow architecture
-- ✅ Created workflow with 7 nodes:
-  - Schedule Trigger
-  - HTTP Request (API)
-  - Code Transformation
-  - Filter Validation
-  - PostgreSQL Storage
-  - Google Sheets Export
-  - Email Notification
-- ✅ Added documentation sticky notes
-- ✅ Configured node connections and data flow
-
-**Deliverables**:
-- `startup_data_workflow.json` - Importable n8n workflow
-- Workflow screenshot showing architecture
-- Node configuration details
-
-**Outcome**: Demonstrated ability to design automated data pipelines and understand workflow orchestration.
-
----
-
-### Phase 3: API Integration ⏳ PLANNED
-
-**Timeline**: Week 3-4
-**Status**: ⏳ Future Implementation
-
-**Activities**:
-- Set up Crunchbase API credentials
-- Configure PredictLeads API access
-- Implement OpenCorporates integration
-- Add authentication and rate limiting
-- Test API endpoints and data quality
-- Handle pagination and error scenarios
-
-**Deliverables**:
-- Live API connections
-- Automated data fetching (daily/weekly schedule)
-- Error handling and retry logic
-
-**Outcome**: Transition from manual to automated data collection.
-
----
-
-### Phase 4: Database & Storage ⏳ PLANNED
-
-**Timeline**: Week 4-5
-**Status**: ⏳ Future Implementation
-
-**Activities**:
-- Set up PostgreSQL database
-- Create tables and indexes
-- Migrate CSV data to database
-- Configure Google Sheets API
-- Implement data synchronization
-- Set up backup strategies
-
-**Deliverables**:
-- PostgreSQL database with startup data
-- Google Sheets integration for team access
-- Automated backups
-
-**Outcome**: Scalable, persistent data storage with team collaboration features.
-
----
-
-### Phase 5: Monitoring & Optimization ⏳ PLANNED
-
-**Timeline**: Week 5-6
-**Status**: ⏳ Future Implementation
-
-**Activities**:
-- Configure email notifications
-- Implement logging and error tracking
-- Add data quality metrics
-- Optimize workflow performance
-- Create dashboard for monitoring
-- Set up alerting for failures
-
-**Deliverables**:
-- Email notification system
-- Monitoring dashboard
-- Performance metrics
-
-**Outcome**: Reliable, observable system with proactive error detection.
-
----
-
-## Scalability Considerations
+## Scalability
 
 ### Current Capacity
-- **Records**: 40 startups
-- **Storage**: CSV file (~50 KB)
-- **Processing**: Manual updates
-- **Limitations**: Single user, no automation
+- **Records:** 40 startups
+- **Storage:** ~50 KB CSV file
+- **Processing:** Manual workflow execution
+- **Users:** Single operator
 
-### Designed Capacity
-- **Records**: 10,000+ startups
-- **Storage**: PostgreSQL database (scalable to millions)
-- **Processing**: Automated daily collection
-- **Concurrent Users**: Multiple team members via Google Sheets
+### Design Capacity
+- **Records:** 10,000+ startups
+- **Storage:** PostgreSQL (millions of records)
+- **Processing:** Automated daily execution
+- **Users:** Multiple concurrent via Google Sheets
 
-### Scaling Strategies
+### Scaling Strategy
 
-#### Horizontal Scaling
-- **Multiple API Sources**: Add AngelList, LinkedIn, Twitter APIs
-- **Geographic Expansion**: Support multiple countries
-- **Industry Verticals**: Expand beyond current industries
+**Horizontal Scaling:**
+- Add new API sources (AngelList, LinkedIn)
+- Geographic expansion (multiple countries)
+- Industry verticals (sector-specific data)
 
-#### Vertical Scaling
-- **Database Optimization**:
-  - Proper indexing for fast queries
-  - Partitioning by date or industry
-  - Regular VACUUM and ANALYZE operations
-- **Workflow Optimization**:
-  - Parallel processing for multiple APIs
-  - Batch operations for database inserts
-  - Caching for frequently accessed data
+**Vertical Scaling:**
+- Database indexing and partitioning
+- Parallel API requests (batch processing)
+- Caching frequently accessed data
+- Query optimization
 
-#### Performance Targets
-- **Data Collection**: 1000 startups/hour
-- **Database Queries**: < 100ms average response time
-- **API Rate Limits**: Respect provider limits (implement backoff)
-- **Workflow Execution**: < 5 minutes for full cycle
+**Performance Targets:**
+- API data collection: 1000 records/hour
+- Database queries: <100ms response time
+- Workflow execution: <5 minutes full cycle
+
+---
+
+## Data Schema
+
+### Standard Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| company_name | String | Yes | Official company name |
+| website | URL | Yes | Company website |
+| founder_name | String | No | Primary founder |
+| contact_email | Email | No | Business contact |
+| industry | String | Yes | Primary industry |
+| sub_sector | String | No | Specific focus area |
+| product_description | Text | No | What the company does |
+| target_customers | Text | No | Target market |
+| location | String | No | City, State format |
+| startup_stage | Enum | No | Funding stage |
+| source | String | Yes | Data source identifier |
+
+### Data Types
+
+**Enums:**
+- `startup_stage`: ['Seed', 'Series A', 'Series B', 'Series C', 'Series D+', 'Public', 'Bootstrapped']
+- `industry`: ['FinTech', 'EdTech', 'HealthTech', 'E-commerce', 'Mobility', 'SaaS', 'Other']
 
 ---
 
@@ -496,91 +319,148 @@ Automation System
 
 ### Data Protection
 
-**Current State**:
-- CSV stored locally (not sensitive data)
-- No PII beyond publicly available information
-- Manual access control
+**Current:**
+- Publicly available data only
+- No PII beyond business contacts
+- Local storage (CSV)
 
-**Production Requirements**:
+**Production Requirements:**
+- API credentials in environment variables
+- Encrypted database connections (SSL/TLS)
+- Role-based access control (RBAC)
+- Audit logging for data access
 
-#### Authentication & Authorization
-- API keys stored in environment variables (never in code)
-- n8n credentials encrypted at rest
-- Database access via role-based permissions
-- Google Sheets access via OAuth 2.0
+### Compliance
 
-#### Data Privacy
-- Comply with GDPR / local data protection laws
-- Only collect publicly available information
-- Provide data deletion mechanism
-- Implement data retention policies
+**Data Collection:**
+- Respect API Terms of Service
+- Honor rate limits
+- Use official APIs (no scraping)
 
-#### Security Best Practices
-```
-✓ Use HTTPS for all API calls
-✓ Encrypt database connections (SSL/TLS)
-✓ Regular security updates for n8n and dependencies
-✓ Audit logs for data access
-✓ Rate limiting to prevent abuse
-✓ Input validation to prevent injection attacks
-```
-
-### Compliance Considerations
-
-**Data Sources**:
-- Respect Terms of Service for each platform
-- Honor robots.txt for web scraping
-- Use official APIs when available
-- Implement proper rate limiting
-
-**Data Usage**:
-- Business development and outreach purposes
-- No selling or redistribution of data
-- Clear opt-out mechanism for contacted companies
+**Data Usage:**
+- Business development purposes only
+- No data redistribution
+- Opt-out mechanism for contacted companies
 
 ---
 
-## Future Enhancements
+## Deployment
 
-### Phase 6+: Advanced Features
+### Current Setup
+- Local n8n instance
+- Manual workflow execution
+- CSV file storage
+- No automated scheduling
 
-**AI-Powered Enrichment**
-- Use Claude/GPT API to generate:
-  - Personalized outreach emails
-  - WhatsApp message templates
-  - Competitive analysis
-  - Investment recommendations
+### Production Setup (Designed)
 
-**CRM Integration**
-- HubSpot connector
-- Salesforce integration
-- Custom outreach tracking
-- Response management
+**Infrastructure:**
+```
+┌─────────────────────────────────────┐
+│ Docker Container (n8n)              │
+│ ├─ Workflow engine                  │
+│ ├─ Scheduled triggers               │
+│ └─ Environment variables            │
+└─────────────┬───────────────────────┘
+              │
+              ├─────────────────┬──────────────────┐
+              ↓                 ↓                  ↓
+┌──────────────────┐  ┌──────────────────┐  ┌────────────────┐
+│ PostgreSQL       │  │ Google Sheets    │  │ SMTP Server    │
+│ (Data storage)   │  │ (Team access)    │  │ (Alerts)       │
+└──────────────────┘  └──────────────────┘  └────────────────┘
+```
 
-**Analytics Dashboard**
-- Industry trends visualization
-- Funding stage distribution
-- Geographic heat maps
-- Time-series analysis
+**Deployment Steps:**
+1. Set up PostgreSQL database
+2. Configure n8n with environment variables
+3. Import workflow JSON
+4. Add API credentials
+5. Set up Google Sheets OAuth
+6. Configure SMTP settings
+7. Enable workflow schedule
+8. Test end-to-end execution
 
-**Machine Learning**
-- Lead scoring (predict conversion likelihood)
-- Company categorization
-- Founder pattern analysis
-- Success prediction models
+---
+
+## Error Handling
+
+### Strategy
+
+**API Failures:**
+- Exponential backoff retry (3 attempts)
+- Fallback to cached data
+- Log errors with context
+- Email notification on repeated failures
+
+**Data Quality Issues:**
+- Skip invalid records (don't halt workflow)
+- Log validation failures
+- Maintain error count metrics
+- Alert on high error rate (>10%)
+
+**System Failures:**
+- Workflow state persistence
+- Automatic restart on crash
+- Health check monitoring
+- Backup notification channels
+
+---
+
+## Monitoring
+
+### Metrics
+
+**Operational:**
+- Workflow execution time
+- API response times
+- Error rate per source
+- Data quality score
+
+**Business:**
+- New startups discovered per day
+- Industry distribution
+- Geographic coverage
+- Data completeness percentage
+
+### Observability
+
+**Logging:**
+- Structured logs (JSON format)
+- Log levels: DEBUG, INFO, WARN, ERROR
+- Correlation IDs for tracing
+- Retention: 30 days
+
+**Alerting:**
+- Workflow failures (immediate)
+- High error rate (>10%)
+- API quota exhaustion
+- Data quality degradation
+
+---
+
+## Current State vs Designed State
+
+| Component | Current | Designed |
+|-----------|---------|----------|
+| **Data Collection** | Manual research | Automated API calls |
+| **Storage** | CSV file | PostgreSQL + Sheets |
+| **Workflow** | Design only | Scheduled execution |
+| **Monitoring** | None | Email alerts + metrics |
+| **Access** | Single user | Multi-user (Sheets) |
+| **Updates** | Manual | Automated daily |
 
 ---
 
 ## Conclusion
 
-The Startup Data Collection System demonstrates a **phased approach** to building scalable automation:
+The system architecture balances **immediate delivery** (manual data collection, CSV storage) with **future scalability** (API integration, database storage, automation). The modular design allows incremental enhancement without requiring complete rebuild.
 
-1. ✅ **Phase 1**: Manual data collection establishes baseline
-2. ✅ **Phase 2**: Workflow design shows technical capability
-3. ✅ **Phase 3**: Clear roadmap for production implementation
+**Key Architectural Decisions:**
+- n8n for workflow orchestration (visual, maintainable)
+- CSV for current storage (simple, portable)
+- PostgreSQL for future storage (scalable, queryable)
+- Phased approach (manual → automated)
 
-This architecture balances **immediate deliverables** (CSV data, workflow design) with **future scalability** (API integration, database storage, monitoring), demonstrating both **practical execution** and **strategic thinking**.
-
----
-
+This architecture demonstrates both **practical execution** (delivering working components) and **strategic thinking** (designing for scale).
 
