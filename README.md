@@ -246,7 +246,7 @@ cat data/startup_data_assignment_ready.csv
 | [README.md](./README.md) | Project overview (this file) |
 | [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) | Setup and usage instructions |
 | [ARCHITECTURE_EXPLANATION.md](./ARCHITECTURE_EXPLANATION.md) | System architecture details |
-| [startup_data.csv](./data/startup_data_assignment_ready.csv) | 40 startup records |
+| [startup_data.csv](https://github.com/LexViper/startup-data-automation/blob/main/data/startup_data.csv) | 40 startup records |
 | [n8n_workflow.json](./workflows/startup_data_workflow.json) | Importable workflow |
 
 ---
